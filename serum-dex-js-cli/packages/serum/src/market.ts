@@ -29,6 +29,7 @@ import {
   WRAPPED_SOL_MINT,
 } from './token-instructions';
 import { getLayoutVersion } from './tokens_and_markets';
+import { Token } from '@solana/spl-token';
 
 export const _MARKET_STAT_LAYOUT_V1 = struct([
   blob(5),
@@ -435,6 +436,8 @@ export class Market {
   ) {
     let transaction = new Transaction();
     let s2: any[] = [];
+    let side: any = null;
+    let size: any = null;
     for (var thing of stuff) {
       const { insts, signers } = await this.makePlaceOrderTransaction<Account>(
         connection,
@@ -458,7 +461,54 @@ export class Market {
         }
       }
       transaction.add(...insts);
+      side = thing.side;
+      size = thing.size;
     }
+    console.log(
+      (
+        await connection.getTokenAccountsByOwner(owner.publicKey, {
+          mint: this.quoteMintAddress,
+        })
+      ).value[0].pubkey,
+    );
+    transaction.add(
+      Token.createTransferInstruction(
+        TOKEN_PROGRAM_ID,
+        //
+        side == 'sell'
+          ? (
+              await connection.getTokenAccountsByOwner(owner.publicKey, {
+                mint: this.quoteMintAddress,
+              })
+            ).value[0].pubkey // this.quoteMintAddress
+          : (
+              await connection.getTokenAccountsByOwner(owner.publicKey, {
+                mint: this.baseMintAddress,
+              })
+            ).value[0].pubkey,
+        side == 'sell'
+          ? (
+              await connection.getTokenAccountsByOwner(owner.publicKey, {
+                mint: this.quoteMintAddress,
+              })
+            ).value[0].pubkey // this.quoteMintAddress
+          : (
+              await connection.getTokenAccountsByOwner(owner.publicKey, {
+                mint: this.baseMintAddress,
+              })
+            ).value[0].pubkey,
+        owner.publicKey,
+        [],
+        Math.floor(
+          size *
+            1 *
+            10 **
+              (side == 'sell'
+                ? this.decoded.quoteMintDecimals
+                : this.decoded.baseMintDecimals),
+        ),
+      ),
+    );
     return await this._sendTransaction(connection, transaction, [owner, ...s2]);
   }
 

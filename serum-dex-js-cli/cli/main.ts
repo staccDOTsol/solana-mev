@@ -234,6 +234,7 @@ export class Blockchain {
           // because the owner in this case is the same for the two it's a bit of a mess
           this.coinUserPk,
           this.pcUser2Pk,
+          this.ownerKp.publicKey
         );
       }
     }

@@ -4294,6 +4294,7 @@ describe('Connection', function () {
           expect(lookupTableAccount).to.be.ok;
           return;
         }
+        console.log(lookupTableAccount)
         expect(lookupTableAccount.isActive()).to.be.true;
         expect(lookupTableAccount.state.authority).to.eql(payer.publicKey);
         expect(lookupTableAccount.state.addresses).to.eql(lookupTableAddresses);
