@@ -11,18 +11,18 @@ import {
   Token,
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
-import { Market } from '@project-serum/serum/src/market';
-import { DexInstructions } from '@project-serum/serum/src';
-import {getVaultOwnerAndNonce} from '@project-serum/swap/src/utils';
+import { Market } from '@project-serum/serum/lib/market';
+import { DexInstructions } from '@project-serum/serum/lib';
+import {getVaultOwnerAndNonce} from '@project-serum/swap/lib/utils';
 import fs from 'fs';
 
 // ============================================================================= bc class
 
 export class Blockchain {
   connection: Connection;
-  DEX_PROGRAM_ID = new PublicKey('HYsk1Qc2NryTaMT8qLRRxuYXqt9fEU7aAZCUa17eHgE9');
+  DEX_PROGRAM_ID = new PublicKey('DtidW34Be7LFuAsgyyQi5Jwdr9YpTCXEzKa33Ury4YE6');
 
- // ownerKp: Keypair = Keypair.fromSecretKey(Uint8Array.from([208, 175, 150, 242, 88, 34, 108, 88, 177, 16, 168, 75, 115, 181, 199, 242, 120, 4, 78, 75, 19, 227, 13, 215, 184, 108, 226, 53, 111, 149, 179, 84, 137, 121, 79, 1, 160, 223, 124, 241, 202, 203, 220, 237, 50, 242, 57, 158, 226, 207, 203, 188, 43, 28, 70, 110, 214, 234, 251, 15, 249, 157, 62, 80]));
+  // ownerKp: Keypair = Keypair.fromSecretKey(Uint8Array.from([208, 175, 150, 242, 88, 34, 108, 88, 177, 16, 168, 75, 115, 181, 199, 242, 120, 4, 78, 75, 19, 227, 13, 215, 184, 108, 226, 53, 111, 149, 179, 84, 137, 121, 79, 1, 160, 223, 124, 241, 202, 203, 220, 237, 50, 242, 57, 158, 226, 207, 203, 188, 43, 28, 70, 110, 214, 234, 251, 15, 249, 157, 62, 80]));
   ownerKp: Keypair;
 
   marketKp = new Keypair();
@@ -112,14 +112,17 @@ export class Blockchain {
     //create token accounts
     this.coinVaultPk = await this._createTokenAccount(this.coinMint, vaultSignerPk as any);
     this.pcVaultPk = await this._createTokenAccount(this.pcMint, vaultSignerPk as any);
-
-    this.coinUserPk = await this._createAndFundUserAccount(this.coinMint, 0);
+  
+    this.coinUserPk = await this._createAndFundUserAccount(this.coinMint, 1000);
     this.pcUserPk = await this._createAndFundUserAccount(this.pcMint, 5000);
     // this.srmUserPk = await this._createTokenAccount(this.srmMint, this.ownerKp.publicKey);
     // this.msrmUserPk = await this._createTokenAccount(this.msrmMint, this.ownerKp.publicKey);
 
     this.coinUser2Pk = await this._createAndFundUserAccount(this.coinMint, 1000);
-    this.pcUser2Pk = await this._createAndFundUserAccount(this.pcMint, 0);
+    this.pcUser2Pk = await this._createAndFundUserAccount(this.pcMint, 5000);
+    await this.pcMint.mintTo(this.pcVaultPk, this.ownerKp.publicKey, [], 1000);
+    await this.coinMint.mintTo(this.coinVaultPk , this.ownerKp.publicKey, [], 1000);
+
     // this.srmUser2Pk = await this._createTokenAccount(this.srmMint, this.ownerKp.publicKey);
     // this.msrmUser2Pk = await this._createTokenAccount(this.msrmMint, this.ownerKp.publicKey);
 
@@ -161,21 +164,18 @@ export class Blockchain {
   }
 
   async placeBids() {
+   
     await this.market.placeOrder(this.connection, {
         owner: this.ownerKp as any,
         payer: this.pcUserPk,
-        side: 'buy',
-        price: 120,
-        size: 10,
-        orderType: 'limit',
-      },
-    );
-    await this.market.placeOrder(this.connection, {
-        owner: this.ownerKp as any,
-        payer: this.pcUserPk,
+        // @ts-ignore
+    stuff:[{
         side: 'buy',
         price: 110,
-        size: 20,
+        size: 20},{side: 'buy',
+        price: 120,
+        size: 10}
+      ],
         orderType: 'limit',
       },
     );
@@ -186,18 +186,15 @@ export class Blockchain {
     await this.market.placeOrder(this.connection, {
         owner: this.ownerKp as any,
         payer: this.coinUser2Pk,
-        side: 'sell',
-        price: 119,
-        size: 10,
-        orderType: 'limit',
-      },
-    );
-    await this.market.placeOrder(this.connection, {
-        owner: this.ownerKp as any,
-        payer: this.coinUser2Pk,
-        side: 'sell',
-        price: 130,
-        size: 30,
+             // @ts-ignore
+    stuff:[{
+      
+      side: 'sell',
+      price: 119,
+      size: 10},{ side: 'sell',
+      price: 130,
+      size: 30}
+    ],
         orderType: 'limit',
       },
     );
@@ -271,7 +268,6 @@ export class Blockchain {
     // fills
     console.log('fills are:')
     for (let fill of await this.market.loadFills(this.connection)) {
-      // @ts-ignore
       console.log(fill.orderId, fill.price, fill.size, fill.side);
     }
 
@@ -344,7 +340,7 @@ export function loadKeypairSync(path: string): Keypair {
 
 async function play() {
   const bc = new Blockchain();
-  bc.ownerKp = await loadKeypairSync('/Users/ilmoi/.config/solana/id.json');
+  bc.ownerKp = await loadKeypairSync('/home/gitpod/.config/solana/id.json');
 
   await bc.getConnection();
   const b1 = await bc.connection.getBalance(bc.ownerKp.publicKey);
@@ -356,20 +352,20 @@ async function play() {
   console.log('balance is', b2);
   console.log('initiaing a market costs', (b2-b1)/LAMPORTS_PER_SOL);
 
-  // await bc.loadMarket();
-  // await bc.printMetrics();
+await bc.loadMarket();
+  await bc.printMetrics();
   //
-  // await bc.placeBids();
-  // await bc.printMetrics();
+ await bc.placeBids();
+ await bc.printMetrics();
   //
-  // await bc.placeAsks();
-  // await bc.printMetrics();
+ await bc.placeAsks();
+  await bc.printMetrics();
   //
-  // await bc.consumeEvents();
-  // await bc.printMetrics();
+await bc.consumeEvents();
+  await bc.printMetrics();
   //
-  // await bc.settleFunds();
-  // await bc.printMetrics();
+  await bc.settleFunds();
+   await bc.printMetrics();
 }
 
 play();

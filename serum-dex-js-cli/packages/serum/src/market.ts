@@ -425,9 +425,7 @@ export class Market {
     {
       owner,
       payer,
-      side,
-      price,
-      size,
+      stuff,
       orderType = 'limit',
       clientId,
       openOrdersAddressKey,
@@ -435,24 +433,33 @@ export class Market {
       feeDiscountPubkey,
     }: OrderParams,
   ) {
-    const { transaction, signers } = await this.makePlaceOrderTransaction<
-      Account
-    >(connection, {
-      owner,
-      payer,
-      side,
-      price,
-      size,
-      orderType,
-      clientId,
-      openOrdersAddressKey,
-      openOrdersAccount,
-      feeDiscountPubkey,
-    });
-    return await this._sendTransaction(connection, transaction, [
-      owner,
-      ...signers,
-    ]);
+    let transaction = new Transaction();
+    let s2: any[] = [];
+    for (var thing of stuff) {
+      const { insts, signers } = await this.makePlaceOrderTransaction<Account>(
+        connection,
+        {
+          owner,
+          payer,
+          // @ts-ignore
+          side: thing.side,
+          price: thing.price,
+          size: thing.size,
+          orderType,
+          clientId,
+          openOrdersAddressKey,
+          openOrdersAccount,
+          feeDiscountPubkey,
+        },
+      );
+      for (var abc of signers) {
+        if (!s2.includes(abc)) {
+          s2.push(abc);
+        }
+      }
+      transaction.add(...insts);
+    }
+    return await this._sendTransaction(connection, transaction, [owner, ...s2]);
   }
 
   getSplTokenBalanceFromAccountInfo(
@@ -593,8 +600,11 @@ export class Market {
     {
       owner,
       payer,
+      // @ts-ignore
       side,
+      // @ts-ignore
       price,
+      // @ts-ignore
       size,
       orderType = 'limit',
       clientId,
@@ -619,24 +629,7 @@ export class Market {
     const signers: Account[] = [];
 
     // Fetch an SRM fee discount key if the market supports discounts and it is not supplied
-    let useFeeDiscountPubkey: PublicKey | null;
-    if (feeDiscountPubkey) {
-      useFeeDiscountPubkey = feeDiscountPubkey;
-    } else if (
-      feeDiscountPubkey === undefined &&
-      this.supportsSrmFeeDiscounts
-    ) {
-      //todo this is the only place the SRM_MINT comes into play - so if I avoid triggering this case, I'm good not having to create/repalce it
-      useFeeDiscountPubkey = (
-        await this.findBestFeeDiscountKey(
-          connection,
-          ownerAddress,
-          feeDiscountPubkeyCacheDurationMs,
-        )
-      ).pubkey;
-    } else {
-      useFeeDiscountPubkey = null;
-    }
+    let useFeeDiscountPubkey = null;
 
     let openOrdersAddress: PublicKey;
     if (openOrdersAccounts.length === 0) {
@@ -713,6 +706,7 @@ export class Market {
     const placeOrderInstruction = this.makePlaceOrderInstruction(connection, {
       owner,
       payer: wrappedSolAccount?.publicKey ?? payer,
+      // @ts-ignore
       side,
       price,
       size,
@@ -734,7 +728,7 @@ export class Market {
       );
     }
 
-    return { transaction, signers, payer: owner };
+    return { insts: transaction.instructions, signers, payer: owner };
   }
 
   makePlaceOrderInstruction<T extends PublicKey | Account>(
@@ -744,8 +738,11 @@ export class Market {
     const {
       owner,
       payer,
+      // @ts-ignore
       side,
+      // @ts-ignore
       price,
+      // @ts-ignore
       size,
       orderType = 'limit',
       clientId,
@@ -778,9 +775,7 @@ export class Market {
         orderType,
         clientId,
         programId: this._programId,
-        feeDiscountPubkey: this.supportsSrmFeeDiscounts
-          ? feeDiscountPubkey
-          : null,
+        feeDiscountPubkey: null,
       });
     } else {
       return this.makeNewOrderV3Instruction(params);
@@ -793,8 +788,11 @@ export class Market {
     const {
       owner,
       payer,
+      // @ts-ignore
       side,
+      // @ts-ignore
       price,
+      // @ts-ignore
       size,
       orderType = 'limit',
       clientId,
@@ -829,9 +827,7 @@ export class Market {
       clientId,
       programId: programId ?? this._programId,
       selfTradeBehavior,
-      feeDiscountPubkey: this.supportsSrmFeeDiscounts
-        ? feeDiscountPubkey
-        : null,
+      feeDiscountPubkey: null,
     });
   }
 
@@ -1060,7 +1056,7 @@ export class Market {
             : quoteWallet,
         vaultSigner,
         programId: this._programId,
-        referrerQuoteWallet,
+        referrerQuoteWallet: null,
       }),
     );
 
@@ -1249,9 +1245,7 @@ export interface MarketOptions {
 export interface OrderParams<T = Account> {
   owner: T;
   payer: PublicKey;
-  side: 'buy' | 'sell';
-  price: number;
-  size: number;
+  stuff: any;
   orderType?: 'limit' | 'ioc' | 'postOnly';
   clientId?: BN;
   openOrdersAddressKey?: PublicKey;
