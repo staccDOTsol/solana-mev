@@ -11,7 +11,7 @@ import { BigNumFromString } from "validators/bignum";
 
 const SERUM_PROGRAM_IDS = [
   "4ckmDgGdxQoPDLUkDT3vHgSAkzA3QRdNq5ywwY4sUSJn",
-  "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin",
+  "DtidW34Be7LFuAsgyyQi5Jwdr9YpTCXEzKa33Ury4YE6",
 ];
 
 export const SERUM_DECODED_MAX = 6;

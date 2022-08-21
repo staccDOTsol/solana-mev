@@ -344,7 +344,7 @@ export const PROGRAM_INFO_BY_ID: { [address: string]: ProgramInfo } = {
     name: PROGRAM_NAMES.SERUM_2,
     deployments: [Cluster.MainnetBeta],
   },
-  "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin": {
+  "DtidW34Be7LFuAsgyyQi5Jwdr9YpTCXEzKa33Ury4YE6": {
     name: PROGRAM_NAMES.SERUM_3,
     deployments: [Cluster.MainnetBeta],
   },
