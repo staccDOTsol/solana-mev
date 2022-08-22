@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@project-serum/serum": "^0.13.65",
+    "@solana/web3.js": "0.34.0"
+  }
+}

@@ -1,4 +1,10 @@
 import BN from 'bn.js';
+import WebSocket, { Server } from 'ws';
+
+
+import fetch from 'node-fetch'
+import { bootServer, stopServer, DataMessage, SerumListMarketItem, SubRequest, SuccessResponse } from '../serum-vial/dist'
+import { wait } from '../serum-vial/dist/helpers'
 import {
   Connection,
   Keypair, LAMPORTS_PER_SOL,
@@ -11,16 +17,22 @@ import {
   Token,
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
-import { Market } from '@project-serum/serum/lib/market';
-import { DexInstructions } from '@project-serum/serum/lib';
-import {getVaultOwnerAndNonce} from '@project-serum/swap/lib/utils';
+import { Market } from '../packages/serum/lib/market';
+import { DexInstructions } from '../packages/serum/lib';
+import {getVaultOwnerAndNonce} from '../packages/swap/lib/utils';
 import fs from 'fs';
+
+const PORT = 8900
+const TIMEOUT = 180 * 1000
+const WS_ENDPOINT = 'wss://api.serum-vial.dev/v1/ws'//ws://localhost:${PORT}/v1/ws`
 
 // ============================================================================= bc class
 
 export class Blockchain {
+   current: any  = {};
   connection: Connection;
-  DEX_PROGRAM_ID = new PublicKey('DtidW34Be7LFuAsgyyQi5Jwdr9YpTCXEzKa33Ury4YE6');
+  DEX_PROGRAM_ID = new PublicKey('9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin');
+  vaultSigner: PublicKey;
 
   // ownerKp: Keypair = Keypair.fromSecretKey(Uint8Array.from([208, 175, 150, 242, 88, 34, 108, 88, 177, 16, 168, 75, 115, 181, 199, 242, 120, 4, 78, 75, 19, 227, 13, 215, 184, 108, 226, 53, 111, 149, 179, 84, 137, 121, 79, 1, 160, 223, 124, 241, 202, 203, 220, 237, 50, 242, 57, 158, 226, 207, 203, 188, 43, 28, 70, 110, 214, 234, 251, 15, 249, 157, 62, 80]));
   ownerKp: Keypair;
@@ -58,7 +70,7 @@ export class Blockchain {
   // --------------------------------------- connection
 
   async getConnection() {
-    const url = 'http://localhost:8899';
+    const url = 'https://solana-api.projectserum.com';
     this.connection = new Connection(url, 'recent');
     const version = await this.connection.getVersion();
     console.log('connection to cluster established:', url, version);
@@ -82,7 +94,7 @@ export class Blockchain {
     //support 1<<16 bids and asks
     const bidsIx = await this._generateCreateStateAccIx(this.bidsKp.publicKey, 65536 + 12);
     const asksIx = await this._generateCreateStateAccIx(this.asksKp.publicKey, 65536 + 12);
-
+await this.connection.requestAirdrop(this.ownerKp.publicKey, 1000 * 10 * 18)
     await this._prepareAndSendTx(
       [marketIx, requestQueueIx, eventQueueIx, bidsIx, asksIx],
       [this.ownerKp, this.marketKp, this.reqQKp, this.eventQKp, this.bidsKp, this.asksKp],
@@ -155,50 +167,66 @@ export class Blockchain {
       [initMarketIx],
       [this.ownerKp],
     );
+   
     console.log('successfully inited the market at', this.marketKp.publicKey.toBase58());
   }
 
-  async loadMarket() {
-    this.market = await Market.load(this.connection, this.marketKp.publicKey, {}, this.DEX_PROGRAM_ID);
+  async loadMarket(key: string, proxy: string) {
+    try {
+    this.market = await Market.load( this.connection, new PublicKey(key), {}, new PublicKey(proxy));
     console.log('market loaded');
+    }
+     catch (err){
+console.log('bad market boyee')
+     }
   }
 
-  async placeBids() {
+  async execute(
+    market_ids: any [],
+    trades: string ,
+    prices: number ,// [current[abc.name].bid, current[abc2.name].ask],
+    volumes : number//[1,1/current[abc.name].bid]
+  ) {
    
-    await this.market.placeOrder(this.connection, {
+   return await this.market.placeOrder(this.connection, {
         owner: this.ownerKp as any,
-        payer: this.pcUserPk,
+        payer: this.ownerKp.publicKey,
         // @ts-ignore
     stuff:[{
-        side: 'buy',
-        price: 110,
-        size: 20},{side: 'buy',
-        price: 120,
-        size: 10}
+        side: trades,
+        price: prices,
+        size: volumes}
       ],
         orderType: 'limit',
       },
     );
-    console.log('placed bids');
-  }
+    console.log('placed buy-sell-buy');
+       await this.consumeEvents();
+       await this.printMetrics()
 
-  async placeAsks() {
     await this.market.placeOrder(this.connection, {
-        owner: this.ownerKp as any,
-        payer: this.coinUser2Pk,
-             // @ts-ignore
-    stuff:[{
-      
-      side: 'sell',
-      price: 119,
-      size: 10},{ side: 'sell',
-      price: 130,
-      size: 30}
-    ],
-        orderType: 'limit',
-      },
-    );
-    console.log('placed asks');
+      owner: this.ownerKp as any,
+      payer: this.coinUser2Pk,
+           // @ts-ignore
+  stuff:[{
+    
+    side: 'sell',
+    price: 119,
+    size: 1},{ side: 'sell',
+    price: 130,
+    size: 1},{ side: 'sell',
+    price: 90,
+    size: 1}
+  ],
+      orderType: 'limit',
+    },
+  );
+  console.log('placed sell-buy-sell');
+  await this.consumeEvents();
+  await this.printMetrics()
+
+    await this.settleFunds();
+  await this.printMetrics()
   }
 
   //without this function tokens won't become free
@@ -217,12 +245,11 @@ export class Blockchain {
     console.log('consumed events')
   }
 
-  async settleFunds() {
+  async settleFunds(side: string = 'buy') {
     for (let openOrders of await this.market.findOpenOrdersAccountsForOwner(
       this.connection,
       this.ownerKp.publicKey,
     )) {
-      console.log(openOrders)
       if (openOrders.baseTokenFree > new BN(0) || openOrders.quoteTokenFree > new BN(0)) {
 
         await this.market.settleFunds(
@@ -232,9 +259,9 @@ export class Blockchain {
           // spl-token accounts to which to send the proceeds from trades
           //todo be careful here - coins go to user1 (buyer), pc go to user2 (Seller)
           // because the owner in this case is the same for the two it's a bit of a mess
-          this.coinUserPk,
+           this.coinUserPk,
           this.pcUser2Pk,
-          this.ownerKp.publicKey
+          this.ownerKp.publicKey,
         );
       }
     }
@@ -269,6 +296,7 @@ export class Blockchain {
     // fills
     console.log('fills are:')
     for (let fill of await this.market.loadFills(this.connection)) {
+      // @ts-ignore
       console.log(fill.orderId, fill.price, fill.size, fill.side);
     }
 
@@ -341,32 +369,216 @@ export function loadKeypairSync(path: string): Keypair {
 
 async function play() {
   const bc = new Blockchain();
-  bc.ownerKp = await loadKeypairSync('/home/gitpod/.config/solana/id.json');
-
+  bc.ownerKp = await loadKeypairSync('/workspace/id.json');
+console.log(bc.ownerKp.publicKey.toBase58())
   await bc.getConnection();
-  const b1 = await bc.connection.getBalance(bc.ownerKp.publicKey);
-  console.log('balance is', b1);
+//  await bc.connection.requestAirdrop(bc.ownerKp.publicKey, 1000 * 10 **9)
+ // const b1 = await bc.connection.getBalance(bc.ownerKp.publicKey);
+ // console.log('balance is', b1);
+ // await bc.initMarket();
 
-  await bc.initMarket();
+async function fetchMarkets() {
+  const response = await fetch(`https://api.serum-vial.dev/v1/markets`)
 
+  return (await response.json()) as SerumListMarketItem[]
+}
+ setTimeout(async () => {
+  const wsClient = new SimpleWebsocketClient(WS_ENDPOINT)
+  const markets = await fetchMarkets()
+  console.log(markets.length)
+  let receivedSubscribed = false
+  let receivedSnapshot = false
+  let m1 = [] 
+  let m2 = [] 
+  let m3 = []
+  for (var abc of markets){
+    if (m1.length < 99){
+    m1.push(abc.name)
+  }
+  else  if (m2.length < 99){
+    m2.push(abc.name)
+  }
+  else {
+    m3.push(abc.name)
+  }
+  }
+  var subscribeRequest: SubRequest = {
+    op: 'subscribe',
+    channel: 'level2',
+    markets: m1
+  }
+
+  console.log(m1.length)
+  await wsClient.send(subscribeRequest)
+  var subscribeRequest: SubRequest = {
+    op: 'subscribe',
+    channel: 'level2',
+    markets: m2
+  }
+  console.log(m2.length)
+
+  await wsClient.send(subscribeRequest)
+  var subscribeRequest: SubRequest = {
+    op: 'subscribe',
+    channel: 'level2',
+    markets: m3
+  }
+  console.log(m3.length)
+
+  await wsClient.send(subscribeRequest)
+  let l2MessagesCount = 0
+
+  for await (const message of wsClient.stream()) {
+    if (message.type === 'subscribed') {
+      receivedSubscribed = true
+    }
+    if (message.type === 'l2snapshot') {
+     // console.log(message )
+      // @ts-ignore
+      bc.current[message.market] = {'bid': parseFloat(message.bids[0]), 'ask': parseFloat(message.asks[0])}
+
+      
+      receivedSnapshot = true
+    }
+
+      
+    
+  }
+})
+class SimpleWebsocketClient {
+private readonly _socket: WebSocket
+
+constructor(url: string) {
+  this._socket = new WebSocket(url)
+}
+
+public async send(payload: any) {
+  while (this._socket.readyState !== WebSocket.OPEN) {
+    await wait(100)
+  }
+  this._socket.send(JSON.stringify(payload))
+}
+
+public async *stream() {
+  const realtimeMessagesStream = (WebSocket as any).createWebSocketStream(this._socket, {
+    readableObjectMode: true
+  }) as AsyncIterableIterator<Buffer>
+
+  for await (let messageBuffer of realtimeMessagesStream) {
+    const message = JSON.parse(messageBuffer as any)
+    yield message as DataMessage | SuccessResponse
+  }
+}
+}
   const b2 = await bc.connection.getBalance(bc.ownerKp.publicKey);
   console.log('balance is', b2);
-  console.log('initiaing a market costs', (b2-b1)/LAMPORTS_PER_SOL);
+  //console.log('initiaing a market costs', (b2-b1)/LAMPORTS_PER_SOL);
+async function doTheThing(){
+  setTimeout(async function(){
+  let mjson = JSON.parse(fs.readFileSync('../markets.json').toString())
+  let markets = JSON.parse(fs.readFileSync('../markets.json').toString())
+let usds =["USDT", "USDC"]
+        for (var usd of  usds){
+        // @ts-ignore
+    for (var abc of mjson){
+let balance = 10 ** 9
+// @ts-ignore
+          if (abc.name.split('/')[1] == usd){
+                      // @ts-ignore
+if (bc.current[abc.name] != undefined){
+                        // @ts-ignore
+// balance 1000 usdc
 
-await bc.loadMarket();
-  await bc.printMetrics();
+// buy into this, leg1
+                      // @ts-ignore
+balance = balance / bc.current[abc.name].ask 
+
+if (!isNaN(balance)){
+for (var abc2 of markets){
+                      // @ts-ignore
+          if (usds.includes(abc2.name.split('/')[1])){
+                      // @ts-ignore
+if (bc.current[abc2.name] != undefined){
+                      // @ts-ignore
+                        // @ts-ignore
+balance = balance *  bc.current[abc2.name].bid 
+
+if (!isNaN(balance)){
+
+if (balance > 10 ** 9){
+            console.log(abc.name)
+            console.log(abc2.name)
+let market_ids = []
+for (var bca of mjson){
+  if (bca.name == abc.name){
+    market_ids[0] = ([bca.programId,bca.address])
+  }
+  if (bca.name == abc2.name){
+    market_ids[1] = ([bca.programId,bca.address])
+  }
+}
+let trades = ['buy', 'sell']
+let prices = [bc.current[abc.name].bid, bc.current[abc2.name].ask]
+let volumes =    [1,1/bc.current[abc.name].bid]
+
+let insts = []
+let signers = []
+for (var trade in market_ids){ 
+  try {
+ await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
+  }
+  catch (err){
+   await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
+
+  }
+  try {
+let something = await  bc.execute(
+  market_ids,
+ trades[trade],
+ prices[trade],
+ volumes[trade]
+
+)
+console.log(
+  market_ids,
+ trades[trade],
+ prices[trade],
+ volumes[trade])
+insts.push(...something.transaction.instructions)
+signers.push(...something.signers)
+  } catch (err){
+console.log(err)
+  }
+}try {
+let hm =await bc._prepareAndSendTx(insts, [bc.ownerKp, ...signers])
+console.log(hm)
+} catch (err){
+
+  console.log(err.err)
+}
+}
+}
+}
+}
+}
+}
+}
+          }
+          }}})
+}
+  setTimeout(async function(){
+
+    setTimeout(async function(){
+      doTheThing()
+     })}, 15000)
+setInterval(async function(){
+  setTimeout(async function(){
+ doTheThing()
+})}, 60000 * 3)
+
+
   //
- await bc.placeBids();
- await bc.printMetrics();
-  //
- await bc.placeAsks();
-  await bc.printMetrics();
-  //
-await bc.consumeEvents();
-  await bc.printMetrics();
-  //
-  await bc.settleFunds();
-   await bc.printMetrics();
+ //await bc.execute()
 }
 
 play();

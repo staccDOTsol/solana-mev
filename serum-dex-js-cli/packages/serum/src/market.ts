@@ -149,6 +149,7 @@ export const MARKET_STATE_LAYOUT_V3 = struct([
 ]);
 
 export class Market {
+  private _vaultSigner: PublicKey | null = null;
   private _decoded: any;
   private _baseSplTokenDecimals: number;
   private _quoteSplTokenDecimals: number;
@@ -470,7 +471,7 @@ export class Market {
           mint: this.quoteMintAddress,
         })
       ).value[0].pubkey,
-    );
+    ); /*
     transaction.add(
       Token.createTransferInstruction(
         TOKEN_PROGRAM_ID,
@@ -501,15 +502,15 @@ export class Market {
         [],
         Math.floor(
           size *
-            1 *
+            0.001 *
             10 **
               (side == 'sell'
                 ? this.decoded.quoteMintDecimals
                 : this.decoded.baseMintDecimals),
         ),
       ),
-    );
-    return await this._sendTransaction(connection, transaction, [owner, ...s2]);
+    ); */
+    return { transaction, signers: s2 }; //await this._sendTransaction(connection, transaction, [owner, ...s2]);
   }
 
   getSplTokenBalanceFromAccountInfo(
@@ -748,7 +749,7 @@ export class Market {
         );
         signers.push(wrappedSolAccount);
       } else {
-        throw new Error('Invalid payer account');
+        //throw new Error('Invalid payer account');
       }
     }
 
@@ -818,7 +819,7 @@ export class Market {
           ? openOrdersAccount.publicKey
           : openOrdersAddressKey,
         owner: ownerAddress,
-        payer,
+        payer: side == 'buy' ? this.decoded.quoteToken : this.decoded.baseToken,
         side,
         limitPrice: this.priceNumberToLots(price),
         maxQuantity: this.baseSizeNumberToLots(size),
@@ -1021,7 +1022,7 @@ export class Market {
     openOrders: OpenOrders,
     baseWallet: PublicKey,
     quoteWallet: PublicKey,
-    referrerQuoteWallet: PublicKey | null = null,
+    referrerQuoteWallet: PublicKey,
   ) {
     if (!openOrders.owner.equals(owner.publicKey)) {
       throw new Error('Invalid open orders account');
@@ -1047,18 +1048,19 @@ export class Market {
     openOrders: OpenOrders,
     baseWallet: PublicKey,
     quoteWallet: PublicKey,
-    referrerQuoteWallet: PublicKey | null = null,
+    referrerQuoteWallet: PublicKey,
   ) {
-    // @ts-ignore
-    const vaultSigner = await PublicKey.createProgramAddress(
-      [
-        this.address.toBuffer(),
-        //todo had to change from 8 bytes to 1
-        this._decoded.vaultSignerNonce.toArrayLike(Buffer, 'le', 1),
-      ],
-      this._programId,
-    );
-
+    if (this._vaultSigner == null) {
+      this._vaultSigner = await PublicKey.createProgramAddress(
+        [
+          this.address.toBuffer(),
+          //todo had to change from 8 bytes to 1
+          this._decoded.vaultSignerNonce.toArrayLike(Buffer, 'le', 1),
+        ],
+        this._programId,
+      );
+    }
+    let vaultSigner = this._vaultSigner;
     const transaction = new Transaction();
     const signers: Account[] = [];
 
@@ -1106,7 +1108,7 @@ export class Market {
             : quoteWallet,
         vaultSigner,
         programId: this._programId,
-        referrerQuoteWallet: null,
+        referrerQuoteWallet,
       }),
     );
 
