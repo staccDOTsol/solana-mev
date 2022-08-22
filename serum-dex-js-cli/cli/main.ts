@@ -255,22 +255,13 @@ try {
   } catch (err){
     
    }
+
     for (let openOrders of await this.market.findOpenOrdersAccountsForOwner(
       this.connection,
       this.ownerKp.publicKey,
     )) {
 
-        await this.market.settleFunds(
-          this.connection,
-          this.ownerKp as any,
-          openOrders,
-          // spl-token accounts to which to send the proceeds from trades
-          //todo be careful here - coins go to user1 (buyer), pc go to user2 (Seller)
-          // because the owner in this case is the same for the two it's a bit of a mess
-           side == 'buy' ? base :this.market.decoded.baseVault ,//this.market.coinv,
-          side == 'sell' ? quote:this.market.decoded.quoteVault,
-          this.ownerKp.publicKey,
-        );
+      
     }
     console.log('settled funds');
   } catch (err){
@@ -491,7 +482,7 @@ let usds =["USDC","USDT"]
         for (var usd of  usds){
         // @ts-ignore
     
-        await PromisePool.withConcurrency(7)//devintestinprod
+        await PromisePool.withConcurrency(20)//devintestinprod
         .for(mjson)
         // @ts-ignore
         .handleError(async (err, asset) => {
@@ -582,32 +573,56 @@ console.log(
  volumes[trade])
 insts.push(...something.transaction.instructions)
 signers.push(...something.signers)
+
+  const openOrders = await this.market.findOpenOrdersAccountsForOwner(
+      this.connection,
+      this.ownerKp.publicKey,
+    );
+    const consumeEventsIx = this.market.makeConsumeEventsInstruction(
+      openOrders.map(oo => oo.publicKey), 100
+    )
+
+  let  base 
+      let quote 
+try {
+        base = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.baseMint})).value[0].pubkey
+   } catch (err){
+
+   }
+   try {
+   quote = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.quoteMint})).value[0].pubkey
+  } catch (err){
+    
+   }
+   let arg =   await this.market.settleFunds(
+          this.connection,
+          this.ownerKp as any,
+          openOrders,
+          // spl-token accounts to which to send the proceeds from trades
+          //todo be careful here - coins go to user1 (buyer), pc go to user2 (Seller)
+          // because the owner in this case is the same for the two it's a bit of a mess
+           trades[trade] == 'buy' ? base :this.market.decoded.baseVault ,//this.market.coinv,
+          trades[trade]  == 'sell' ? quote:this.market.decoded.quoteVault,
+          this.ownerKp.publicKey,
+        );
+   
+for (var abc3 in arg.signers){
+  if (!signers.includes(abc3)){
+    signers.push(abc3)
+  }
+}
+insts.push(consumeEventsIx)
+insts.push(...arg.transaction.instructions)
   } catch (err){
 console.log(err)
   }
 }try {
+
 let hm =await bc._prepareAndSendTx(insts, [bc.ownerKp, ...signers])
 console.log(hm)
 for (var trade in market_ids){ 
-    try {
- await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
-  } catch (err){
-     await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
-
-  }  let buysells = ['buy', 'sell']
-    try {
- await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
-  } catch (err){
-     await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
-
-  } try {
-  await bc.consumeEvents();
-  await bc.settleFunds(trades[trade]);
-} catch (err) {
-}
 }
 } catch (err){
-
   console.log(err)
 }
 

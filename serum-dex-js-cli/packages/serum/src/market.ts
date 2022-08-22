@@ -1044,10 +1044,7 @@ export class Market {
       quoteWallet,
       referrerQuoteWallet,
     );
-    return await this._sendTransaction(connection, transaction, [
-      owner,
-      ...signers,
-    ]);
+    return { transaction, signers };
   }
 
   async makeSettleFundsTransaction(
@@ -1062,7 +1059,7 @@ export class Market {
         [
           this.address.toBuffer(),
           //todo had to change from 8 bytes to 1
-          this._decoded.vaultSignerNonce.toArrayLike(Buffer, 'le', 1),
+          this._decoded.vaultSignerNonce.toArrayLike(Buffer, 'le', 8),
         ],
         this._programId,
       );
