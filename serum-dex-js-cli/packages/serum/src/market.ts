@@ -805,11 +805,15 @@ export class Market {
     const ownerAddress: PublicKey = owner.publicKey ?? owner;
     if (
       this.baseSizeNumberToLots(size).lte(new BN(0)) ||
-      this.baseSizeNumberToLots(size).gte(new BN(16)) // I am poor
+      this.baseSizeNumberToLots(size).gte(new BN(3)) // I am poor
     ) {
       throw new Error('size too small');
     }
-    if (this.priceNumberToLots(price).lte(new BN(0))) {
+    if (
+      this.priceNumberToLots(price).lte(new BN(0)) ||
+      this.priceNumberToLots(price).gte(new BN(2 * 10 ** 6))
+    ) {
+      // I am poor
       throw new Error('invalid price');
     }
     if (this.usesRequestQueue) {

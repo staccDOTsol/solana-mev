@@ -242,14 +242,23 @@ console.log('bad market boyee')
   }
 
   async settleFunds(side: string = 'buy') {
-       let base = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.baseMint})).value[0].pubkey
-   let quote = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.quoteMint})).value[0].pubkey
+    try {
+      let  base 
+      let quote 
+try {
+        base = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.baseMint})).value[0].pubkey
+   } catch (err){
 
+   }
+   try {
+   quote = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.quoteMint})).value[0].pubkey
+  } catch (err){
+    
+   }
     for (let openOrders of await this.market.findOpenOrdersAccountsForOwner(
       this.connection,
       this.ownerKp.publicKey,
     )) {
-      if (openOrders.baseTokenFree > new BN(0) || openOrders.quoteTokenFree > new BN(0)) {
 
         await this.market.settleFunds(
           this.connection,
@@ -262,9 +271,11 @@ console.log('bad market boyee')
           side == 'sell' ? quote:this.market.decoded.quoteVault,
           this.ownerKp.publicKey,
         );
-      }
     }
     console.log('settled funds');
+  } catch (err){
+    console.log(err)
+  }
   }
 
   async printMetrics() {
@@ -480,7 +491,7 @@ let usds =["USDC","USDT"]
         for (var usd of  usds){
         // @ts-ignore
     
-        await PromisePool.withConcurrency(20)
+        await PromisePool.withConcurrency(7)//devintestinprod
         .for(mjson)
         // @ts-ignore
         .handleError(async (err, asset) => {
@@ -538,18 +549,10 @@ let volumes =    [1 ,1/bc.current[abc.name].bid]
 
 let insts = []
 let signers = []
+
 for (var trade in market_ids){ 
 
-let buysells = ['buy', 'sell']
-    try {
- await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
-  } catch (err){
-     await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
 
-  } try {
-await bc.settleFunds(buysells[trade]);
-} catch (err) {
-}
   try {
     let mint 
     if (usd == 'USDT'){
@@ -559,6 +562,12 @@ await bc.settleFunds(buysells[trade]);
 
       mint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
     }
+        try {
+ await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
+  } catch (err){
+     await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
+
+  }
 let something = await  bc.execute(
   mint,
  trades[trade],
@@ -585,7 +594,17 @@ for (var trade in market_ids){
   } catch (err){
      await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
 
-  }  
+  }  let buysells = ['buy', 'sell']
+    try {
+ await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
+  } catch (err){
+     await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
+
+  } try {
+  await bc.consumeEvents();
+  await bc.settleFunds(trades[trade]);
+} catch (err) {
+}
 }
 } catch (err){
 
