@@ -805,7 +805,7 @@ export class Market {
     const ownerAddress: PublicKey = owner.publicKey ?? owner;
     if (
       this.baseSizeNumberToLots(size).lte(new BN(0)) ||
-      this.baseSizeNumberToLots(size).gte(new BN(3))
+      this.baseSizeNumberToLots(size).gte(new BN(16)) // I am poor
     ) {
       throw new Error('size too small');
     }

@@ -174,7 +174,7 @@ await this.connection.requestAirdrop(this.ownerKp.publicKey, 1000 * 10 * 18)
   async loadMarket(key: string, proxy: string) {
     try {
       
-    this.market = await Market.load( this.connection, new PublicKey(key), {skipPreflight: true}, new PublicKey(proxy));
+    this.market = await Market.load( this.connection, new PublicKey(key), {skipPreflight: false}, new PublicKey(proxy));
     console.log('market loaded');
     }
      catch (err){
@@ -203,7 +203,6 @@ console.log('bad market boyee')
       },
     );
     console.log('placed buy-sell-buy');
-       await this.consumeEvents();
        await this.printMetrics()
 
     await this.market.placeOrder(this.connection, {
@@ -224,11 +223,6 @@ console.log('bad market boyee')
     },
   );
   console.log('placed sell-buy-sell');
-  await this.consumeEvents();
-  await this.printMetrics()
-
-    await this.settleFunds();
-  await this.printMetrics()
   }
 
   //without this function tokens won't become free
@@ -248,6 +242,9 @@ console.log('bad market boyee')
   }
 
   async settleFunds(side: string = 'buy') {
+       let base = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.baseMint})).value[0].pubkey
+   let quote = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.quoteMint})).value[0].pubkey
+
     for (let openOrders of await this.market.findOpenOrdersAccountsForOwner(
       this.connection,
       this.ownerKp.publicKey,
@@ -261,8 +258,8 @@ console.log('bad market boyee')
           // spl-token accounts to which to send the proceeds from trades
           //todo be careful here - coins go to user1 (buyer), pc go to user2 (Seller)
           // because the owner in this case is the same for the two it's a bit of a mess
-           this.coinUserPk,
-          this.pcUser2Pk,
+           side == 'buy' ? base :this.market.decoded.baseVault ,//this.market.coinv,
+          side == 'sell' ? quote:this.market.decoded.quoteVault,
           this.ownerKp.publicKey,
         );
       }
@@ -328,7 +325,7 @@ console.log('bad market boyee')
 
   async _prepareAndSendTx(instructions: TransactionInstruction[], signers: Signer[]) {
     const tx = new Transaction().add(...instructions);
-    const sig = await sendAndConfirmTransaction(this.connection, tx, signers, {skipPreflight: true});
+    const sig = await sendAndConfirmTransaction(this.connection, tx, signers, {skipPreflight: false});
     console.log(sig);
   }
 
@@ -476,8 +473,6 @@ public async *stream() {
   console.log('balance is', b2);
   //console.log('initiaing a market costs', (b2-b1)/LAMPORTS_PER_SOL);
 async function doTheThing(){
-  const b2 = await bc.connection.getBalance(bc.ownerKp.publicKey);
-  console.log('balance is', b2);
   setTimeout(async function(){
   let mjson = JSON.parse(fs.readFileSync('../markets.json').toString())
   let markets = JSON.parse(fs.readFileSync('../markets.json').toString())
@@ -544,12 +539,17 @@ let volumes =    [1 ,1/bc.current[abc.name].bid]
 let insts = []
 let signers = []
 for (var trade in market_ids){ 
+
+let buysells = ['buy', 'sell']
     try {
  await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
   } catch (err){
      await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
 
-  }
+  } try {
+await bc.settleFunds(buysells[trade]);
+} catch (err) {
+}
   try {
     let mint 
     if (usd == 'USDT'){
@@ -579,17 +579,19 @@ console.log(err)
 }try {
 let hm =await bc._prepareAndSendTx(insts, [bc.ownerKp, ...signers])
 console.log(hm)
+for (var trade in market_ids){ 
+    try {
+ await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
+  } catch (err){
+     await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
 
+  }  
+}
 } catch (err){
 
   console.log(err)
 }
 
-await bc.consumeEvents();
-await bc.printMetrics()
-
-  await bc.settleFunds();
-await bc.printMetrics()
 }
 }
 }
@@ -608,7 +610,7 @@ await bc.printMetrics()
 setInterval(async function(){
   setTimeout(async function(){
  doTheThing()
-})}, 30000)
+})}, 120000)
 
 
   //
