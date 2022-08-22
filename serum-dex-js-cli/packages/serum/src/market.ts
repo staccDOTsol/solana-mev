@@ -803,7 +803,10 @@ export class Market {
     } = params;
     // @ts-ignore
     const ownerAddress: PublicKey = owner.publicKey ?? owner;
-    if (this.baseSizeNumberToLots(size).lte(new BN(0))) {
+    if (
+      this.baseSizeNumberToLots(size).lte(new BN(0)) ||
+      this.baseSizeNumberToLots(size).gte(new BN(3))
+    ) {
       throw new Error('size too small');
     }
     if (this.priceNumberToLots(price).lte(new BN(0))) {
@@ -819,7 +822,7 @@ export class Market {
           ? openOrdersAccount.publicKey
           : openOrdersAddressKey,
         owner: ownerAddress,
-        payer: side == 'buy' ? this.decoded.quoteToken : this.decoded.baseToken,
+        payer,
         side,
         limitPrice: this.priceNumberToLots(price),
         maxQuantity: this.baseSizeNumberToLots(size),

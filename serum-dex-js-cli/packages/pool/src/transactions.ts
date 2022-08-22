@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {
   PoolInfo,
   PoolInstructions,
@@ -155,9 +156,8 @@ export class PoolTransactions {
     };
 
     const mintAccountSpace = 82;
-    const mintAccountLamports = await connection.getMinimumBalanceForRentExemption(
-      mintAccountSpace,
-    );
+    const mintAccountLamports =
+      await connection.getMinimumBalanceForRentExemption(mintAccountSpace);
 
     // Initialize pool token.
     setup.transaction.add(

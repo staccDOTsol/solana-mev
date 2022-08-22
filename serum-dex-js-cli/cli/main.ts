@@ -1,6 +1,6 @@
 import BN from 'bn.js';
 import WebSocket, { Server } from 'ws';
-
+import PromisePool from '@supercharge/promise-pool'
 
 import fetch from 'node-fetch'
 import { bootServer, stopServer, DataMessage, SerumListMarketItem, SubRequest, SuccessResponse } from '../serum-vial/dist'
@@ -173,7 +173,8 @@ await this.connection.requestAirdrop(this.ownerKp.publicKey, 1000 * 10 * 18)
 
   async loadMarket(key: string, proxy: string) {
     try {
-    this.market = await Market.load( this.connection, new PublicKey(key), {}, new PublicKey(proxy));
+      
+    this.market = await Market.load( this.connection, new PublicKey(key), {skipPreflight: true}, new PublicKey(proxy));
     console.log('market loaded');
     }
      catch (err){
@@ -182,15 +183,16 @@ console.log('bad market boyee')
   }
 
   async execute(
-    market_ids: any [],
+    mint: PublicKey,
     trades: string ,
     prices: number ,// [current[abc.name].bid, current[abc2.name].ask],
     volumes : number//[1,1/current[abc.name].bid]
   ) {
-   
+   let usdcacc = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint})).value[0].pubkey
+   console.log(usdcacc)
    return await this.market.placeOrder(this.connection, {
         owner: this.ownerKp as any,
-        payer: this.ownerKp.publicKey,
+        payer: usdcacc as any,
         // @ts-ignore
     stuff:[{
         side: trades,
@@ -326,7 +328,7 @@ console.log('bad market boyee')
 
   async _prepareAndSendTx(instructions: TransactionInstruction[], signers: Signer[]) {
     const tx = new Transaction().add(...instructions);
-    const sig = await sendAndConfirmTransaction(this.connection, tx, signers);
+    const sig = await sendAndConfirmTransaction(this.connection, tx, signers, {skipPreflight: true});
     console.log(sig);
   }
 
@@ -369,7 +371,7 @@ export function loadKeypairSync(path: string): Keypair {
 
 async function play() {
   const bc = new Blockchain();
-  bc.ownerKp = await loadKeypairSync('/workspace/id.json');
+  bc.ownerKp = await loadKeypairSync('/Users/jarettdunn/id.json');
 console.log(bc.ownerKp.publicKey.toBase58())
   await bc.getConnection();
 //  await bc.connection.requestAirdrop(bc.ownerKp.publicKey, 1000 * 10 **9)
@@ -474,13 +476,26 @@ public async *stream() {
   console.log('balance is', b2);
   //console.log('initiaing a market costs', (b2-b1)/LAMPORTS_PER_SOL);
 async function doTheThing(){
+  const b2 = await bc.connection.getBalance(bc.ownerKp.publicKey);
+  console.log('balance is', b2);
   setTimeout(async function(){
   let mjson = JSON.parse(fs.readFileSync('../markets.json').toString())
   let markets = JSON.parse(fs.readFileSync('../markets.json').toString())
-let usds =["USDT", "USDC"]
+let usds =["USDC","USDT"]
         for (var usd of  usds){
         // @ts-ignore
-    for (var abc of mjson){
+    
+        await PromisePool.withConcurrency(20)
+        .for(mjson)
+        // @ts-ignore
+        .handleError(async (err, asset) => {
+          console.error(
+            `\nError uploading or whatever`,
+            err.message,
+          );
+        })
+        // @ts-ignore
+        .process(async abc => {
 let balance = 10 ** 9
 // @ts-ignore
           if (abc.name.split('/')[1] == usd){
@@ -506,34 +521,46 @@ balance = balance *  bc.current[abc2.name].bid
 if (!isNaN(balance)){
 
 if (balance > 10 ** 9){
+  // @ts-ignore
             console.log(abc.name)
             console.log(abc2.name)
 let market_ids = []
 for (var bca of mjson){
+  // @ts-ignore
   if (bca.name == abc.name){
     market_ids[0] = ([bca.programId,bca.address])
   }
+  // @ts-ignore
   if (bca.name == abc2.name){
     market_ids[1] = ([bca.programId,bca.address])
   }
 }
 let trades = ['buy', 'sell']
+// @ts-ignore
 let prices = [bc.current[abc.name].bid, bc.current[abc2.name].ask]
-let volumes =    [1,1/bc.current[abc.name].bid]
+// @ts-ignore
+let volumes =    [1 ,1/bc.current[abc.name].bid]
 
 let insts = []
 let signers = []
 for (var trade in market_ids){ 
-  try {
+    try {
  await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
-  }
-  catch (err){
-   await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
+  } catch (err){
+     await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
 
   }
   try {
+    let mint 
+    if (usd == 'USDT'){
+      mint = new PublicKey("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB")
+    }
+    else {
+
+      mint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+    }
 let something = await  bc.execute(
-  market_ids,
+  mint,
  trades[trade],
  prices[trade],
  volumes[trade]
@@ -552,10 +579,17 @@ console.log(err)
 }try {
 let hm =await bc._prepareAndSendTx(insts, [bc.ownerKp, ...signers])
 console.log(hm)
+
 } catch (err){
 
-  console.log(err.err)
+  console.log(err)
 }
+
+await bc.consumeEvents();
+await bc.printMetrics()
+
+  await bc.settleFunds();
+await bc.printMetrics()
 }
 }
 }
@@ -564,17 +598,17 @@ console.log(hm)
 }
 }
           }
-          }}})
+          })}})
 }
   setTimeout(async function(){
 
     setTimeout(async function(){
       doTheThing()
-     })}, 15000)
+     })}, 5000)
 setInterval(async function(){
   setTimeout(async function(){
  doTheThing()
-})}, 60000 * 3)
+})}, 30000)
 
 
   //
