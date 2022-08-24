@@ -1,6 +1,5 @@
 {
   "extends": "@tsconfig/node12/tsconfig.json",
-"type":"module",
   "compilerOptions": {
     "outDir": "./lib",
     "allowJs": true,

@@ -439,6 +439,7 @@ export class Market {
     let s2: any[] = [];
     let side: any = null;
     let size: any = null;
+    let i = 0;
     for (var thing of stuff) {
       const { insts, signers } = await this.makePlaceOrderTransaction<Account>(
         connection,
@@ -464,6 +465,19 @@ export class Market {
       transaction.add(...insts);
       side = thing.side;
       size = thing.size;
+
+      const openOrders = await this.findOpenOrdersAccountsForOwner(
+        connection,
+        owner.publicKey,
+      );
+      const consumeEventsIx = this.makeConsumeEventsInstruction(
+        openOrders.map((oo) => oo.publicKey),
+        100,
+      );
+      i++;
+      if (i == 2) {
+        transaction.add(consumeEventsIx);
+      }
     }
     console.log(
       (
@@ -804,15 +818,11 @@ export class Market {
     // @ts-ignore
     const ownerAddress: PublicKey = owner.publicKey ?? owner;
     if (
-      this.baseSizeNumberToLots(size).lte(new BN(0)) ||
-      this.baseSizeNumberToLots(size).gte(new BN(3)) // I am poor
+      this.baseSizeNumberToLots(size).lte(new BN(0)) // I am poor
     ) {
       throw new Error('size too small');
     }
-    if (
-      this.priceNumberToLots(price).lte(new BN(0)) ||
-      this.priceNumberToLots(price).gte(new BN(2 * 10 ** 6))
-    ) {
+    if (this.priceNumberToLots(price).lte(new BN(0))) {
       // I am poor
       throw new Error('invalid price');
     }
@@ -1112,7 +1122,7 @@ export class Market {
             : quoteWallet,
         vaultSigner,
         programId: this._programId,
-        referrerQuoteWallet,
+        referrerQuoteWallet: null,
       }),
     );
 

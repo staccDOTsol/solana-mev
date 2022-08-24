@@ -1,38 +1,28 @@
 import BN from 'bn.js';
-import WebSocket, { Server } from 'ws';
-import PromisePool from '@supercharge/promise-pool'
-
-import fetch from 'node-fetch'
-import { bootServer, stopServer, DataMessage, SerumListMarketItem, SubRequest, SuccessResponse } from '../serum-vial/dist'
-import { wait } from '../serum-vial/dist/helpers'
 import {
   Connection,
-  Keypair, LAMPORTS_PER_SOL,
+  Keypair,
+  LAMPORTS_PER_SOL,
   PublicKey,
-  sendAndConfirmTransaction, Signer,
+  sendAndConfirmTransaction,
+  Signer,
   SystemProgram,
-  Transaction, TransactionInstruction,
+  Transaction,
+  TransactionInstruction,
 } from '@solana/web3.js';
-import {
-  Token,
-  TOKEN_PROGRAM_ID,
-} from '@solana/spl-token';
-import { Market } from '../packages/serum/lib/market';
-import { DexInstructions } from '../packages/serum/lib';
-import {getVaultOwnerAndNonce} from '../packages/swap/lib/utils';
+import { Token, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { Market } from '@project-serum/serum/lib/market';
+import { DexInstructions } from '@project-serum/serum/lib';
+import { getVaultOwnerAndNonce } from '@project-serum/swap/lib/utils';
 import fs from 'fs';
 
-const PORT = 8900
-const TIMEOUT = 180 * 1000
-const WS_ENDPOINT = 'wss://api.serum-vial.dev/v1/ws'//ws://localhost:${PORT}/v1/ws`
-
 // ============================================================================= bc class
-
+let pcMint;
 export class Blockchain {
-   current: any  = {};
   connection: Connection;
-  DEX_PROGRAM_ID = new PublicKey('9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin');
-  vaultSigner: PublicKey;
+  DEX_PROGRAM_ID = new PublicKey(
+    'FDcDFqmTnGhQgpHhX426HTME6W45doSSqoZwpsn1i81s',
+  );
 
   // ownerKp: Keypair = Keypair.fromSecretKey(Uint8Array.from([208, 175, 150, 242, 88, 34, 108, 88, 177, 16, 168, 75, 115, 181, 199, 242, 120, 4, 78, 75, 19, 227, 13, 215, 184, 108, 226, 53, 111, 149, 179, 84, 137, 121, 79, 1, 160, 223, 124, 241, 202, 203, 220, 237, 50, 242, 57, 158, 226, 207, 203, 188, 43, 28, 70, 110, 214, 234, 251, 15, 249, 157, 62, 80]));
   ownerKp: Keypair;
@@ -70,7 +60,7 @@ export class Blockchain {
   // --------------------------------------- connection
 
   async getConnection() {
-    const url = 'https://solana-api.projectserum.com';
+    const url = 'http://localhost:8899';
     this.connection = new Connection(url, 'recent');
     const version = await this.connection.getVersion();
     console.log('connection to cluster established:', url, version);
@@ -87,17 +77,39 @@ export class Blockchain {
 
     //length taken from here - https://github.com/project-serum/serum-dex/blob/master/dex/crank/src/lib.rs#L1286
     //this holds market state, hence need to fit this data structure - https://github.com/project-serum/serum-dex/blob/master/dex/src/state.rs#L176
-    const marketIx = await this._generateCreateStateAccIx(this.marketKp.publicKey, 376 + 12);
+    const marketIx = await this._generateCreateStateAccIx(
+      this.marketKp.publicKey,
+      376 + 12,
+    );
     //support few requests at a time, but many (1<<20) events
-    const requestQueueIx = await this._generateCreateStateAccIx(this.reqQKp.publicKey, 640 + 12);
-    const eventQueueIx = await this._generateCreateStateAccIx(this.eventQKp.publicKey, 1048576 + 12);
+    const requestQueueIx = await this._generateCreateStateAccIx(
+      this.reqQKp.publicKey,
+      640 + 12,
+    );
+    const eventQueueIx = await this._generateCreateStateAccIx(
+      this.eventQKp.publicKey,
+      1048576 + 12,
+    );
     //support 1<<16 bids and asks
-    const bidsIx = await this._generateCreateStateAccIx(this.bidsKp.publicKey, 65536 + 12);
-    const asksIx = await this._generateCreateStateAccIx(this.asksKp.publicKey, 65536 + 12);
-await this.connection.requestAirdrop(this.ownerKp.publicKey, 1000 * 10 * 18)
+    const bidsIx = await this._generateCreateStateAccIx(
+      this.bidsKp.publicKey,
+      65536 + 12,
+    );
+    const asksIx = await this._generateCreateStateAccIx(
+      this.asksKp.publicKey,
+      65536 + 12,
+    );
+
     await this._prepareAndSendTx(
       [marketIx, requestQueueIx, eventQueueIx, bidsIx, asksIx],
-      [this.ownerKp, this.marketKp, this.reqQKp, this.eventQKp, this.bidsKp, this.asksKp],
+      [
+        this.ownerKp,
+        this.marketKp,
+        this.reqQKp,
+        this.eventQKp,
+        this.bidsKp,
+        this.asksKp,
+      ],
     );
     console.log('created necessary accounts');
 
@@ -122,107 +134,121 @@ await this.connection.requestAirdrop(this.ownerKp.publicKey, 1000 * 10 * 18)
     // console.log('created vault signer PDA, at ', created_key.toBytes());
 
     //create token accounts
-    this.coinVaultPk = await this._createTokenAccount(this.coinMint, vaultSignerPk as any);
+    this.coinVaultPk = await this._createTokenAccount(
+      this.coinMint,
+      vaultSignerPk as any,
+    );
     this.pcVaultPk = await this._createTokenAccount(this.pcMint, vaultSignerPk as any);
-  
+
     this.coinUserPk = await this._createAndFundUserAccount(this.coinMint, 1000);
     this.pcUserPk = await this._createAndFundUserAccount(this.pcMint, 5000);
     // this.srmUserPk = await this._createTokenAccount(this.srmMint, this.ownerKp.publicKey);
     // this.msrmUserPk = await this._createTokenAccount(this.msrmMint, this.ownerKp.publicKey);
 
-    this.coinUser2Pk = await this._createAndFundUserAccount(this.coinMint, 1000);
-    this.pcUser2Pk = await this._createAndFundUserAccount(this.pcMint, 5000);
-    await this.pcMint.mintTo(this.pcVaultPk, this.ownerKp.publicKey, [], 1000);
-    await this.coinMint.mintTo(this.coinVaultPk , this.ownerKp.publicKey, [], 1000);
-
+    this.coinUser2Pk = await this._createAndFundUserAccount(
+      this.coinMint,
+      1000,
+    );
+    this.pcUser2Pk = await this._createAndFundUserAccount(this.pcMint, 1000);
     // this.srmUser2Pk = await this._createTokenAccount(this.srmMint, this.ownerKp.publicKey);
     // this.msrmUser2Pk = await this._createTokenAccount(this.msrmMint, this.ownerKp.publicKey);
 
     const initMarketIx = DexInstructions.initializeMarket({
-        //dex accounts
-        market: this.marketKp.publicKey,
-        requestQueue: this.reqQKp.publicKey,
-        eventQueue: this.eventQKp.publicKey,
-        bids: this.bidsKp.publicKey,
-        asks: this.asksKp.publicKey,
-        //vaults
-        baseVault: this.coinVaultPk,
-        quoteVault: this.pcVaultPk,
-        //mints
-        baseMint: this.coinMint.publicKey,
-        quoteMint: this.pcMint.publicKey,
-        //rest
-        baseLotSize: new BN(1),
-        quoteLotSize: new BN(1),
-        feeRateBps: new BN(50),
-        vaultSignerNonce: vaultSignerNonce,
-        quoteDustThreshold: new BN(100),
-        programId: this.DEX_PROGRAM_ID,
-        // authority = undefined,
-        // pruneAuthority = undefined,
-      },
-    );
+      //dex accounts
+      market: this.marketKp.publicKey,
+      requestQueue: this.reqQKp.publicKey,
+      eventQueue: this.eventQKp.publicKey,
+      bids: this.bidsKp.publicKey,
+      asks: this.asksKp.publicKey,
+      //vaults
+      baseVault: this.coinVaultPk,
+      quoteVault: this.pcVaultPk,
+      //mints
+      baseMint: this.coinMint.publicKey,
+      quoteMint: this.pcMint.publicKey,
+      //rest
+      baseLotSize: new BN(1),
+      quoteLotSize: new BN(1),
+      feeRateBps: new BN(50),
+      vaultSignerNonce: vaultSignerNonce,
+      quoteDustThreshold: new BN(100),
+      programId: this.DEX_PROGRAM_ID,
+      // authority = undefined,
+      // pruneAuthority = undefined,
+    });
 
-    await this._prepareAndSendTx(
-      [initMarketIx],
-      [this.ownerKp],
+    await this._prepareAndSendTx([initMarketIx], [this.ownerKp]);
+    console.log(
+      'successfully inited the market at',
+      this.marketKp.publicKey.toBase58(),
     );
-   
-    console.log('successfully inited the market at', this.marketKp.publicKey.toBase58());
   }
 
-  async loadMarket(key: string, proxy: string) {
-    try {
-      
-    this.market = await Market.load( this.connection, new PublicKey(key), {skipPreflight: false}, new PublicKey(proxy));
+  async loadMarket() {
+    this.market = await Market.load(
+      this.connection,
+      this.marketKp.publicKey,
+      {},
+      this.DEX_PROGRAM_ID,
+    );
     console.log('market loaded');
-    }
-     catch (err){
-console.log('bad market boyee')
-     }
   }
 
-  async execute(
-    mint: PublicKey,
-    trades: string ,
-    prices: number ,// [current[abc.name].bid, current[abc2.name].ask],
-    volumes : number//[1,1/current[abc.name].bid]
-  ) {
-   let usdcacc = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint})).value[0].pubkey
-   console.log(usdcacc)
-   return await this.market.placeOrder(this.connection, {
-        owner: this.ownerKp as any,
-        payer: usdcacc as any,
-        // @ts-ignore
-    stuff:[{
-        side: trades,
-        price: prices,
-        size: volumes}
-      ],
-        orderType: 'limit',
-      },
-    );
-    console.log('placed buy-sell-buy');
-       await this.printMetrics()
-
+  async placeBids() {
+   
     await this.market.placeOrder(this.connection, {
       owner: this.ownerKp as any,
-      payer: this.coinUser2Pk,
-           // @ts-ignore
-  stuff:[{
-    
-    side: 'sell',
-    price: 119,
-    size: 1},{ side: 'sell',
-    price: 130,
-    size: 1},{ side: 'sell',
-    price: 90,
-    size: 1}
-  ],
+      payer: this.pcUserPk,stuff:[{
+      side: 'buy',
+      price: Math.floor(Math.random() * 3) + 50,
+      size: 20},{side: 'sell',
+      price: Math.floor(Math.random() * 3) + 50,
+      size: 10},{side: 'buy',
+      price: Math.floor(Math.random() * 3) + 50,
+      size: 10}],
       orderType: 'limit',
-    },
-  );
-  console.log('placed sell-buy-sell');
+    });
+    console.log('placed bids');
+  }
+  async execute(
+    mint: PublicKey,
+    trades: string,
+    prices: number, // [current[abc.name].bid, current[abc2.name].ask],
+    volumes: number, //[1,1/current[abc.name].bid]
+  ) {
+    let usdcacc = (
+      await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {
+        mint,
+      })
+    ).value[0].pubkey;
+    console.log(usdcacc);
+    return await this.market.placeOrder(this.connection, {
+      owner: this.ownerKp as any,
+      payer: usdcacc as any,
+      // @ts-ignore
+      stuff: [
+        {
+          side: trades,
+          price: prices,
+          size: volumes,
+        },
+      ],
+      orderType: 'limit',
+    });
+  }
+
+  async placeAsks() {
+    await this.market.placeOrder(this.connection, {
+      owner: this.ownerKp as any,
+      payer: this.coinUser2Pk,stuff:[{
+      side: 'sell',
+      price: Math.floor(Math.random() * 6) + 54,
+      size: 10},{ side: 'buy',
+      price: Math.floor(Math.random() * 6) + 54,
+      size: 30}],
+      orderType: 'limit',
+    });
+    console.log('placed asks');
   }
 
   //without this function tokens won't become free
@@ -232,41 +258,37 @@ console.log('bad market boyee')
       this.ownerKp.publicKey,
     );
     const consumeEventsIx = this.market.makeConsumeEventsInstruction(
-      openOrders.map(oo => oo.publicKey), 100
-    )
-    await this._prepareAndSendTx(
-      [consumeEventsIx],
-      [this.ownerKp]
-    )
-    console.log('consumed events')
+      openOrders.map(oo => oo.publicKey),
+      100,
+    );
+    await this._prepareAndSendTx([consumeEventsIx], [this.ownerKp]);
+    console.log('consumed events');
   }
 
-  async settleFunds(side: string = 'buy') {
-    try {
-      let  base 
-      let quote 
-try {
-        base = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.baseMint})).value[0].pubkey
-   } catch (err){
-
-   }
-   try {
-   quote = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.quoteMint})).value[0].pubkey
-  } catch (err){
-    
-   }
-
+  async settleFunds(side = 'buy') {
     for (let openOrders of await this.market.findOpenOrdersAccountsForOwner(
       this.connection,
       this.ownerKp.publicKey,
     )) {
-
-      
+      console.log(openOrders);
+      if (
+        openOrders.baseTokenFree > new BN(0) ||
+        openOrders.quoteTokenFree > new BN(0)
+      ) {
+        await this.market.settleFunds(
+          this.connection,
+          this.ownerKp as any,
+          openOrders,
+          // spl-token accounts to which to send the proceeds from trades
+          //todo be careful here - coins go to user1 (buyer), pc go to user2 (Seller)
+          // because the owner in this case is the same for the two it's a bit of a mess
+          this.coinUserPk,
+          this.pcUser2Pk,
+          null
+        );
+      }
     }
     console.log('settled funds');
-  } catch (err){
-    console.log(err)
-  }
   }
 
   async printMetrics() {
@@ -295,9 +317,8 @@ try {
     // }
 
     // fills
-    console.log('fills are:')
+    console.log('fills are:');
     for (let fill of await this.market.loadFills(this.connection)) {
-      // @ts-ignore
       console.log(fill.orderId, fill.price, fill.size, fill.side);
     }
 
@@ -306,15 +327,33 @@ try {
     // console.log('open orders for the owner are', orders);
 
     //user token balances
-    console.log('PROTOCOL:')
-    console.log('  coin vault balance is', await this._getTokenBalance(this.coinVaultPk));
-    console.log('  pc vault balance is', await this._getTokenBalance(this.pcVaultPk));
-    console.log('USER 1:')
-    console.log('  coin user balance is', await this._getTokenBalance(this.coinUserPk));
-    console.log('  pc user balance is', await this._getTokenBalance(this.pcUserPk));
-    console.log('USER 2:')
-    console.log('  coin user 2 balance is', await this._getTokenBalance(this.coinUser2Pk));
-    console.log('  pc user 2 balance is', await this._getTokenBalance(this.pcUser2Pk));
+    console.log('PROTOCOL:');
+    console.log(
+      '  coin vault balance is',
+      await this._getTokenBalance(this.coinVaultPk),
+    );
+    console.log(
+      '  pc vault balance is',
+      await this._getTokenBalance(this.pcVaultPk),
+    );
+    console.log('USER 1:');
+    console.log(
+      '  coin user balance is',
+      await this._getTokenBalance(this.coinUserPk),
+    );
+    console.log(
+      '  pc user balance is',
+      await this._getTokenBalance(this.pcUserPk),
+    );
+    console.log('USER 2:');
+    console.log(
+      '  coin user 2 balance is',
+      await this._getTokenBalance(this.coinUser2Pk),
+    );
+    console.log(
+      '  pc user 2 balance is',
+      await this._getTokenBalance(this.pcUser2Pk),
+    );
     console.log('// ---------------------------------------');
   }
 
@@ -325,9 +364,12 @@ try {
     return balance.value.uiAmount;
   }
 
-  async _prepareAndSendTx(instructions: TransactionInstruction[], signers: Signer[]) {
+  async _prepareAndSendTx(
+    instructions: TransactionInstruction[],
+    signers: Signer[],
+  ) {
     const tx = new Transaction().add(...instructions);
-    const sig = await sendAndConfirmTransaction(this.connection, tx, signers, {skipPreflight: false});
+    const sig = await sendAndConfirmTransaction(this.connection, tx, signers);
     console.log(sig);
   }
 
@@ -346,13 +388,19 @@ try {
     return mint.createAccount(owner);
   }
 
-  async _createAndFundUserAccount(mint: Token, mintAmount: number): Promise<PublicKey> {
+  async _createAndFundUserAccount(
+    mint: Token,
+    mintAmount: number,
+  ): Promise<PublicKey> {
     const tokenUserPk = await mint.createAccount(this.ownerKp.publicKey);
     await mint.mintTo(tokenUserPk, this.ownerKp.publicKey, [], mintAmount);
     return tokenUserPk;
   }
 
-  async _generateCreateStateAccIx(newAccountPubkey: PublicKey, space: number): Promise<TransactionInstruction> {
+  async _generateCreateStateAccIx(
+    newAccountPubkey: PublicKey,
+    space: number,
+  ): Promise<TransactionInstruction> {
     return SystemProgram.createAccount({
       programId: this.DEX_PROGRAM_ID,
       fromPubkey: this.ownerKp.publicKey,
@@ -369,286 +417,93 @@ export function loadKeypairSync(path: string): Keypair {
 }
 
 async function play() {
-  const bc = new Blockchain();
-  bc.ownerKp = await loadKeypairSync('/Users/jarettdunn/id.json');
-console.log(bc.ownerKp.publicKey.toBase58())
-  await bc.getConnection();
-//  await bc.connection.requestAirdrop(bc.ownerKp.publicKey, 1000 * 10 **9)
- // const b1 = await bc.connection.getBalance(bc.ownerKp.publicKey);
- // console.log('balance is', b1);
- // await bc.initMarket();
+  let bcs: any = [];
 
-async function fetchMarkets() {
-  const response = await fetch(`https://api.serum-vial.dev/v1/markets`)
+  for (var i = 0; i <= 10; i++) {
+    const bc = new Blockchain();
+    bc.ownerKp = await loadKeypairSync(i.toString());
 
-  return (await response.json()) as SerumListMarketItem[]
-}
- setTimeout(async () => {
-  const wsClient = new SimpleWebsocketClient(WS_ENDPOINT)
-  const markets = await fetchMarkets()
-  console.log(markets.length)
-  let receivedSubscribed = false
-  let receivedSnapshot = false
-  let m1 = [] 
-  let m2 = [] 
-  let m3 = []
-  for (var abc of markets){
-    if (m1.length < 99){
-    m1.push(abc.name)
-  }
-  else  if (m2.length < 99){
-    m2.push(abc.name)
-  }
-  else {
-    m3.push(abc.name)
-  }
-  }
-  var subscribeRequest: SubRequest = {
-    op: 'subscribe',
-    channel: 'level2',
-    markets: m1
-  }
+    await bc.getConnection();
 
-  console.log(m1.length)
-  await wsClient.send(subscribeRequest)
-  var subscribeRequest: SubRequest = {
-    op: 'subscribe',
-    channel: 'level2',
-    markets: m2
-  }
-  console.log(m2.length)
-
-  await wsClient.send(subscribeRequest)
-  var subscribeRequest: SubRequest = {
-    op: 'subscribe',
-    channel: 'level2',
-    markets: m3
-  }
-  console.log(m3.length)
-
-  await wsClient.send(subscribeRequest)
-  let l2MessagesCount = 0
-
-  for await (const message of wsClient.stream()) {
-    if (message.type === 'subscribed') {
-      receivedSubscribed = true
-    }
-    if (message.type === 'l2snapshot') {
-     // console.log(message )
-      // @ts-ignore
-      bc.current[message.market] = {'bid': parseFloat(message.bids[0]), 'ask': parseFloat(message.asks[0])}
-
-      
-      receivedSnapshot = true
-    }
-
-      
-    
-  }
-})
-class SimpleWebsocketClient {
-private readonly _socket: WebSocket
-
-constructor(url: string) {
-  this._socket = new WebSocket(url)
-}
-
-public async send(payload: any) {
-  while (this._socket.readyState !== WebSocket.OPEN) {
-    await wait(100)
-  }
-  this._socket.send(JSON.stringify(payload))
-}
-
-public async *stream() {
-  const realtimeMessagesStream = (WebSocket as any).createWebSocketStream(this._socket, {
-    readableObjectMode: true
-  }) as AsyncIterableIterator<Buffer>
-
-  for await (let messageBuffer of realtimeMessagesStream) {
-    const message = JSON.parse(messageBuffer as any)
-    yield message as DataMessage | SuccessResponse
-  }
-}
-}
-  const b2 = await bc.connection.getBalance(bc.ownerKp.publicKey);
-  console.log('balance is', b2);
-  //console.log('initiaing a market costs', (b2-b1)/LAMPORTS_PER_SOL);
-async function doTheThing(){
-  setTimeout(async function(){
-  let mjson = JSON.parse(fs.readFileSync('../markets.json').toString())
-  let markets = JSON.parse(fs.readFileSync('../markets.json').toString())
-let usds =["USDC","USDT"]
-        for (var usd of  usds){
-        // @ts-ignore
-    
-        await PromisePool.withConcurrency(20)//devintestinprod
-        .for(mjson)
-        // @ts-ignore
-        .handleError(async (err, asset) => {
-          console.error(
-            `\nError uploading or whatever`,
-            err.message,
-          );
-        })
-        // @ts-ignore
-        .process(async abc => {
-let balance = 10 ** 9
-// @ts-ignore
-          if (abc.name.split('/')[1] == usd){
-                      // @ts-ignore
-if (bc.current[abc.name] != undefined){
-                        // @ts-ignore
-// balance 1000 usdc
-
-// buy into this, leg1
-                      // @ts-ignore
-balance = balance / bc.current[abc.name].ask 
-
-if (!isNaN(balance)){
-for (var abc2 of markets){
-                      // @ts-ignore
-          if (usds.includes(abc2.name.split('/')[1])){
-                      // @ts-ignore
-if (bc.current[abc2.name] != undefined){
-                      // @ts-ignore
-                        // @ts-ignore
-balance = balance *  bc.current[abc2.name].bid 
-
-if (!isNaN(balance)){
-
-if (balance > 10 ** 9){
-  // @ts-ignore
-            console.log(abc.name)
-            console.log(abc2.name)
-let market_ids = []
-for (var bca of mjson){
-  // @ts-ignore
-  if (bca.name == abc.name){
-    market_ids[0] = ([bca.programId,bca.address])
-  }
-  // @ts-ignore
-  if (bca.name == abc2.name){
-    market_ids[1] = ([bca.programId,bca.address])
-  }
-}
-let trades = ['buy', 'sell']
-// @ts-ignore
-let prices = [bc.current[abc.name].bid, bc.current[abc2.name].ask]
-// @ts-ignore
-let volumes =    [1 ,1/bc.current[abc.name].bid]
-
-let insts = []
-let signers = []
-
-for (var trade in market_ids){ 
-
-
-  try {
-    let mint 
-    if (usd == 'USDT'){
-      mint = new PublicKey("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB")
-    }
-    else {
-
-      mint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
-    }
-        try {
- await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
-  } catch (err){
-     await bc.loadMarket(market_ids[trade][0], market_ids[trade][1])
-
-  }
-let something = await  bc.execute(
-  mint,
- trades[trade],
- prices[trade],
- volumes[trade]
-
-)
-console.log(
-  market_ids,
- trades[trade],
- prices[trade],
- volumes[trade])
-insts.push(...something.transaction.instructions)
-signers.push(...something.signers)
-
-  const openOrders = await this.market.findOpenOrdersAccountsForOwner(
-      this.connection,
-      this.ownerKp.publicKey,
-    );
-    const consumeEventsIx = this.market.makeConsumeEventsInstruction(
-      openOrders.map(oo => oo.publicKey), 100
-    )
-
-  let  base 
-      let quote 
-try {
-        base = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.baseMint})).value[0].pubkey
-   } catch (err){
-
-   }
-   try {
-   quote = (await this.connection.getTokenAccountsByOwner(this.ownerKp.publicKey, {mint: this.market.decoded.quoteMint})).value[0].pubkey
-  } catch (err){
-    
-   }
-   let arg =   await this.market.settleFunds(
-          this.connection,
-          this.ownerKp as any,
-          openOrders,
-          // spl-token accounts to which to send the proceeds from trades
-          //todo be careful here - coins go to user1 (buyer), pc go to user2 (Seller)
-          // because the owner in this case is the same for the two it's a bit of a mess
-           trades[trade] == 'buy' ? base :this.market.decoded.baseVault ,//this.market.coinv,
-          trades[trade]  == 'sell' ? quote:this.market.decoded.quoteVault,
-          this.ownerKp.publicKey,
-        );
+    const b1 = await bc.connection.getBalance(bc.ownerKp.publicKey);
+    console.log('balance is', b1);
    
-for (var abc3 in arg.signers){
-  if (!signers.includes(abc3)){
-    signers.push(abc3)
-  }
-}
-insts.push(consumeEventsIx)
-insts.push(...arg.transaction.instructions)
-  } catch (err){
-console.log(err)
-  }
-}try {
+    await bc.initMarket();
 
-let hm =await bc._prepareAndSendTx(insts, [bc.ownerKp, ...signers])
-console.log(hm)
-for (var trade in market_ids){ 
-}
-} catch (err){
-  console.log(err)
-}
+    const b2 = await bc.connection.getBalance(bc.ownerKp.publicKey);
+    console.log('balance is', b2);
+    console.log('initiaing a market costs', (b2 - b1) / LAMPORTS_PER_SOL);
 
-}
-}
-}
-}
-}
-}
-}
+    await bc.loadMarket();
+    // await bc.printMetrics();
+    //
+    await bc.placeBids();
+    // await bc.printMetrics();
+    //
+    await bc.placeAsks();
+    // await bc.printMetrics();
+    //
+    //await bc.printMetrics();
+    //
+    await bc.settleFunds();
+    //  await bc.printMetrics();
+    bcs.push(bc);
+    for (var abc of bcs) {
+      for (var abc2 of bcs) {
+        if (abc != abc2) {
+          let balance = 10 ** 9;
+          let bids = await abc.market.loadBids(abc.connection);
+          let asks = await abc.market.loadAsks(abc.connection);
+          let b = 0;
+          // bids
+          for (let [price, size] of bids.getL2(1)) {
+            b = price;
           }
-          })}})
+          let a = 0;
+          // asks
+          for (let [price, size] of asks.getL2(1)) {
+            a = price;
+          }
+
+          balance = balance / a;
+
+          if (!isNaN(balance)) {
+            if (abc2.market.baseMint == abc.market.quoteMint) {
+              let bids = await abc2.market.loadBids(abc.connection);
+              let asks = await abc2.market.loadAsks(abc.connection);
+              let b = 0;
+              // bids
+              for (let [price, size] of bids.getL2(1)) {
+                b = price;
+              }
+              let a = 0;
+              // asks
+              for (let [price, size] of asks.getL2(1)) {
+                a = price;
+              }
+              balance = balance / b;
+
+              if (!isNaN(balance)) {
+                let bids = await abc2.market.loadBids(abc.connection);
+                let asks = await abc2.market.loadAsks(abc.connection);
+                let b = 0;
+                // bids
+                for (let [price, size] of bids.getL2(1)) {
+                  b = price;
+                }
+                let a = 0;
+                // asks
+                for (let [price, size] of asks.getL2(1)) {
+                  a = price;
+                }
+                balance = balance * a;
+                console.log(balance/ 10 ** 9);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
-  setTimeout(async function(){
-
-    setTimeout(async function(){
-      doTheThing()
-     })}, 5000)
-setInterval(async function(){
-  setTimeout(async function(){
- doTheThing()
-})}, 120000)
-
-
-  //
- //await bc.execute()
-}
-
 play();

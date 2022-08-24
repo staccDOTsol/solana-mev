@@ -439,7 +439,7 @@ export class DexInstructions {
     quoteWallet,
     vaultSigner,
     programId,
-    referrerQuoteWallet,
+    referrerQuoteWallet = null,
   }) {
     const keys = [
       { pubkey: market, isSigner: false, isWritable: true },
