@@ -30,5 +30,4 @@ export {
   OpenOrdersPda,
   ReferralFees,
   Logger,
-  Middleware,
 } from './market-proxy/middleware';
