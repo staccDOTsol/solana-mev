@@ -3,8 +3,7 @@ import WebSocket, { Server } from 'ws';
 import PromisePool from '@supercharge/promise-pool'
 
 import fetch from 'node-fetch'
-import { bootServer, stopServer, DataMessage, SerumListMarketItem, SubRequest, SuccessResponse } from '../serum-vial/dist'
-import { wait } from '../serum-vial/dist/helpers'
+import { DataMessage, SerumListMarketItem, SubRequest, SuccessResponse } from '../../serum-vial/dist'
 import {
   Connection,
   Keypair, LAMPORTS_PER_SOL,
@@ -21,6 +20,7 @@ import { Market } from '../packages/serum/lib/market';
 import { DexInstructions } from '../packages/serum/lib';
 import {getVaultOwnerAndNonce} from '../packages/swap/lib/utils';
 import fs from 'fs';
+import { sleep } from '@strata-foundation/spl-utils';
 
 const PORT = 8900
 const TIMEOUT = 180 * 1000
@@ -370,7 +370,7 @@ export function loadKeypairSync(path: string): Keypair {
 
 async function play() {
   const bc = new Blockchain();
-  bc.ownerKp = await loadKeypairSync('/Users/jarettdunn/id.json');
+  bc.ownerKp = await loadKeypairSync('/Users/jarettdunn/jaregm.json');
 console.log(bc.ownerKp.publicKey.toBase58())
   await bc.getConnection();
 //  await bc.connection.requestAirdrop(bc.ownerKp.publicKey, 1000 * 10 **9)
@@ -455,7 +455,7 @@ constructor(url: string) {
 
 public async send(payload: any) {
   while (this._socket.readyState !== WebSocket.OPEN) {
-    await wait(100)
+    await sleep(100)
   }
   this._socket.send(JSON.stringify(payload))
 }
@@ -478,57 +478,68 @@ async function doTheThing(){
   setTimeout(async function(){
   let mjson = JSON.parse(fs.readFileSync('../markets.json').toString())
   let markets = JSON.parse(fs.readFileSync('../markets.json').toString())
-let usds =["USDC","USDT"]
-        for (var usd of  usds){
+let balance: any = {}
         // @ts-ignore
-    
-        await PromisePool.withConcurrency(20)//devintestinprod
-        .for(mjson)
-        // @ts-ignore
-        .handleError(async (err, asset) => {
-          console.error(
-            `\nError uploading or whatever`,
-            err.message,
-          );
-        })
-        // @ts-ignore
-        .process(async abc => {
-let balance = 10 ** 9
+    for (var abc of mjson){
+          // @ts-ignore
+balance[abc] = {} //1sol
 // @ts-ignore
-          if (abc.name.split('/')[1] == usd){
+          if (true){//abc.name.split('/')[1] == usd){ //33usd
                       // @ts-ignore
 if (bc.current[abc.name] != undefined){
                         // @ts-ignore
 // balance 1000 usdc
 
 // buy into this, leg1
-                      // @ts-ignore
-balance = balance / bc.current[abc.name].ask 
 
-if (!isNaN(balance)){
+if (true){
 for (var abc2 of markets){
+  for (var abcabc of markets){
+ if (true){// for (var abcabc of markets){
                       // @ts-ignore
-          if (usds.includes(abc2.name.split('/')[1])){
+          if ( ((abc2.name.split('/')[0] == abcabc.name.split('/')[0])  &&abc.name.split('/')[0] == abc2.name.split('/')[1])  && ( abcabc.name.split('/')[1] == abc.name.split('/')[1]) ){//} abc.name.split('/')[0]){
                       // @ts-ignore
+if (bc.current[abcabc.name] != undefined){
 if (bc.current[abc2.name] != undefined){
                       // @ts-ignore
+
+if (true){//!isNaN(balance[abc])){
+
+
+                      // @ts-ignore
+                      if (true){//usd == (abcabc.name.split('/')[1])){
                         // @ts-ignore
-balance = balance *  bc.current[abc2.name].bid 
+///  if (bc.current[abcabc.name] != undefined){
 
-if (!isNaN(balance)){
-
-if (balance > 10 ** 9){
+                      // @ts-ignore
+                      balance[abc] =  bc.current[abc.name].ask  //  0.1
+                        // @ts-ignore
+                        balance[abc] = balance[abc] * bc.current[abc2.name].bid //sell
+                        // @ts-ignore
+                      balance[abc] =( balance[abc] /  bc.current[abcabc.name].ask ) 
+                        // @ts-ignore
+                        if (!isNaN(balance[abc])){
+                          let returns = balance[abc]
+                          //console.log(returns)
+// @ts-ignore
+if (returns > 1){//} bc.current[abc.name].bid ){
   // @ts-ignore
-            console.log(abc.name)
-            console.log(abc2.name)
+  console.log(abc.name + ' <-> ' + abc2.name + ' <-> ' + abcabc.name + ': ' + returns)
+  // @ts-ignore
+  console.log(bc.current[abc.name].bid )
+  console.log(bc.current[abc2.name].ask )
+  console.log(bc.current[abcabc.name].bid )
 let market_ids = []
-for (var bca of mjson){
+if (false){
+//for (var bca of mjson){
   // @ts-ignore
   if (bca.name == abc.name){
+    // @ts-ignore
     market_ids[0] = ([bca.programId,bca.address])
   }
   // @ts-ignore
   if (bca.name == abc2.name){
+    // @ts-ignore
     market_ids[1] = ([bca.programId,bca.address])
   }
 }
@@ -540,19 +551,12 @@ let volumes =    [1 ,1/bc.current[abc.name].bid]
 
 let insts = []
 let signers = []
-
-for (var trade in market_ids){ 
+if (false){
+//for (var trade in market_ids){ 
 
 
   try {
     let mint 
-    if (usd == 'USDT'){
-      mint = new PublicKey("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB")
-    }
-    else {
-
-      mint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
-    }
         try {
  await bc.loadMarket(market_ids[trade][1], market_ids[trade][0])
   } catch (err){
@@ -618,23 +622,26 @@ console.log(err)
   }
 }try {
 
-let hm =await bc._prepareAndSendTx(insts, [bc.ownerKp, ...signers])
-console.log(hm)
+//let hm =await bc._prepareAndSendTx(insts, [bc.ownerKp, ...signers])
+//console.log(hm)
 for (var trade in market_ids){ 
 }
 } catch (err){
   console.log(err)
 }
-
+}
+                        }
+                      }
+                    }
+}
+}
+}
+}}
 }
 }
 }
 }
-}
-}
-}
-          }
-          })}})
+          }})
 }
   setTimeout(async function(){
 
@@ -644,7 +651,7 @@ for (var trade in market_ids){
 setInterval(async function(){
   setTimeout(async function(){
  doTheThing()
-})}, 120000)
+})}, 30000)
 
 
   //
